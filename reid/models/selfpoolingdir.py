@@ -11,16 +11,22 @@ class SelfPoolingDir(nn.Module):
         self.input_num = input_num
         self.output_num = output_num
 
-        # Linear K
+        # todo: LSTM
+        self.lstm = nn.LSTM(input_size=self.input_num,
+                            hidden_size=self.output_num, num_layers=1, batch_first=True, dropout=0)
+        self.lstm_bn = nn.BatchNorm1d(self.output_num)
+
+        ## Linear K
         self.featK = nn.Linear(self.input_num, self.output_num)
         self.featK_bn = nn.BatchNorm1d(self.output_num)
 
-        # Linear_Q
+        ## Linear_Q
         self.featQ = nn.Linear(self.input_num, self.output_num)
         self.featQ_bn = nn.BatchNorm1d(self.output_num)
 
-        # Softmax
-        self.softmax = nn.Softmax()
+
+        ## Softmax
+        self.softmax = nn.Softmax(dim=-1)
 
         init.kaiming_uniform_(self.featK.weight, mode='fan_out')
         init.constant_(self.featK.bias, 0)
@@ -33,26 +39,37 @@ class SelfPoolingDir(nn.Module):
         init.constant_(self.featQ_bn.weight, 1)
         init.constant_(self.featQ_bn.bias, 0)
 
+        # add lstm to generate q
     def forward(self, probe_value, probe_base):
         pro_size = probe_value.size()
         pro_batch = pro_size[0]
         pro_len = pro_size[1]
 
         # generating Querys
-        Qs = probe_base.view(pro_batch * pro_len, -1)
-        Qs = self.featQ(Qs)
-        Qs = self.featQ_bn(Qs)
-        Qs = Qs.view(pro_batch, pro_len, -1)
+        # Qs = probe_base.view(pro_batch * pro_len, -1)
+        # Qs = self.featQ(Qs)
+        # Qs = self.featQ_bn(Qs)
+        # Qs = Qs.view(pro_batch, pro_len, -1)
+        #
+        # Qmean = torch.mean(Qs, 1)
+        # Qs = Qmean.squeeze(1)
+        # Hs = Qmean.unsqueeze(1).expand(pro_batch, pro_len, self.output_num)
 
-        Qmean = torch.mean(Qs, 1)
-        Qs = Qmean.squeeze(1)
-        Hs = Qmean.unsqueeze(1).expand(pro_batch, pro_len, self.output_num)
+        # use LSTM generating Querys
+        Qs = probe_base.view(pro_batch, pro_len, -1)
+        Qs, (h_n, c_n) = self.lstm(Qs)  # QS = 4*8*128  h_n = 1*4*128 = Qs[,:-1,] c_n = 1*4*128
+        Qs = h_n.squeeze(1)  # Qs = h_n = 1*4*128
+        # Qs = Qs.permute(0, 2, 1)  # 4*128*10
+        # Qs = F.avg_pool1d(Qs, pro_len)  # 4*128*1
+        Qs = Qs.view(pro_batch, self.output_num)  # 4*128
+        Qs = self.lstm_bn(Qs)
 
+        Hs = Qs.unsqueeze(1).expand(pro_batch, pro_len, self.output_num)  # Hs = 4*8*128
         # generating Keys
         K = probe_base.view(pro_batch * pro_len, -1)
         K = self.featK(K)
         K = self.featK_bn(K)
-        K = K.view(pro_batch, pro_len, -1)  # pro_batch*pro_len*128
+        K = K.view(pro_batch, pro_len, -1)  # 4*8*128
 
         weights = Hs * K
         weights = weights.permute(0, 2, 1)
@@ -68,6 +85,7 @@ class SelfPoolingDir(nn.Module):
 
         # pool_probe = torch.mean(probe_value, 1)
         # pool_probe = pool_probe.squeeze(1)
+        #
 
         # pool_probe  Batch x featnum
         # Hs  Batch x hidden_num
