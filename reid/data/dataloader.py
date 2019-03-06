@@ -8,7 +8,7 @@ from reid.data import SeqTestPreprocessor
 from reid.data import RandomPairSampler
 
 
-def get_data(dataset_name, split_id, data_dir, batch_size, seq_len, seq_srd, workers, train_mode):
+def get_data(dataset_name, split_id, data_dir, batch_size, seq_len, seq_srd, workers):
 
     root = osp.join(data_dir, dataset_name)
     dataset = get_sequence(dataset_name, root, split_id=split_id,
@@ -31,17 +31,13 @@ def get_data(dataset_name, split_id, data_dir, batch_size, seq_len, seq_srd, wor
                                             transform=T.Compose([T.RectScale(256, 128),
                                                                  T.ToTensor(), normalizer]))
 
-    if train_mode == 'cnn_rnn':
-        train_loader = DataLoader(train_processor, batch_size=batch_size, num_workers=workers,
-                                  sampler=RandomPairSampler(train_set), pin_memory=True)
-    elif train_mode == 'cnn':
-        train_loader = DataLoader(train_processor, batch_size=batch_size, num_workers=workers,
-                                  shuffle=True, pin_memory=True)
-    else:
-        raise ValueError('no such train mode')
+    train_loader = DataLoader(train_processor, batch_size=batch_size, num_workers=workers,
+                              sampler=RandomPairSampler(train_set), pin_memory=True, drop_last=True)
 
-    query_loader = DataLoader(query_processor, batch_size=8, num_workers=workers, shuffle=False, pin_memory=True)
+    query_loader = DataLoader(query_processor, batch_size=8,
+                              num_workers=workers, shuffle=False, pin_memory=True, drop_last=False)
 
-    gallery_loader = DataLoader(gallery_processor, batch_size=8, num_workers=workers, shuffle=False, pin_memory=True)
+    gallery_loader = DataLoader(gallery_processor, batch_size=8,
+                                num_workers=workers, shuffle=False, pin_memory=True, drop_last=False)
 
     return dataset, num_classes, train_loader, query_loader, gallery_loader
